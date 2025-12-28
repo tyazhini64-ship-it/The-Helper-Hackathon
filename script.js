@@ -1,156 +1,177 @@
+function toggleKey(val) { 
+    document.getElementById('adminKeyContainer').classList.toggle('hidden', val !== 'Admin'); 
+}
+
 window.Engine = {
     role: "User",
-    ADMIN_KEY: "chengalpattu2025", 
-    volunteers: JSON.parse(localStorage.getItem('vols_v2')) || [],
-    incidents: JSON.parse(localStorage.getItem('incs_v2')) || [],
-
-    toggleAdminField(val) { 
-        document.getElementById('adminKeyContainer').style.display = (val === 'Admin') ? 'block' : 'none'; 
-    },
+    ADMIN_KEY: "1234",
+    vols: JSON.parse(localStorage.getItem('cpt_vols')) || [],
+    incs: JSON.parse(localStorage.getItem('cpt_incs')) || [],
 
     login() {
-        const selRole = document.getElementById('userRole').value;
-        if (selRole === 'Admin' && document.getElementById('adminKey').value !== this.ADMIN_KEY) {
-            return alert("Security Breach: Invalid Credentials");
-        }
-        this.role = selRole;
-        document.getElementById('loginOverlay').style.display = 'none';
+        const sel = document.getElementById('userRole').value;
+        if (sel === 'Admin' && document.getElementById('adminKey').value !== this.ADMIN_KEY) return alert("Unauthorized");
+        this.role = sel;
+        document.getElementById('loginOverlay').classList.add('hidden');
+        document.getElementById('personalStatusCard').classList.toggle('hidden', this.role === 'Admin');
+        document.getElementById('intelPanel').classList.toggle('hidden', this.role !== 'Admin');
         this.showSection('home');
     },
 
     showSection(id) {
-        ['homeSection', 'volunteerSection', 'taskSection', 'dashboardSection'].forEach(s => {
-            document.getElementById(s).classList.add('hidden');
-        });
-        document.getElementById(id + 'Section').classList.remove('hidden');
-        
-        // Update Sidebar Active State
-        document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
-        document.getElementById('link-' + id).classList.add('active');
-
-        if (id === 'task') this.renderReviewQueue();
-        if (id === 'volunteer') this.renderVerificationList();
+        document.querySelectorAll('.content-container').forEach(s => s.classList.add('hidden'));
+        const target = document.getElementById(id + 'Section');
+        if(target) target.classList.remove('hidden');
+        if (id === 'home') this.renderHeatmap();
+        if (id === 'volunteer') this.renderVols();
+        if (id === 'task') this.renderReviews();
         if (id === 'dashboard') this.renderDashboard();
-        this.refreshStats();
+        this.updateStats();
     },
 
+    // --- API & INTEL ---
+    async fetchUSGS() {
+        const status = document.getElementById('apiStatus');
+        status.innerText = "Connecting to USGS Seismic Feed...";
+        try {
+            const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson');
+            const data = await res.json();
+            const quake = data.features[0]; 
+            if(quake && quake.properties.mag > 2.0) {
+                this.autoDispatch("SEISMIC ACTIVITY", `Magnitude ${quake.properties.mag} - Detected at ${quake.properties.place}`, "RES");
+            } else { status.innerText = "USGS: No tremors detected in the last hour."; }
+        } catch(e) { status.innerText = "USGS Server Offline."; }
+    },
+
+    async fetchPurpleAir() {
+        const status = document.getElementById('apiStatus');
+        const mockAQI = Math.floor(Math.random() * 200);
+        if(mockAQI > 110) {
+            this.autoDispatch("AIR QUALITY ALERT", `Unhealthy AQI (${mockAQI}) in Chengalpattu District.`, "MED");
+        } else { status.innerText = `District AQI is Stable (${mockAQI})`; }
+    },
+
+    autoDispatch(type, desc, skill) {
+        const alertBox = document.getElementById('apiAlert');
+        alertBox.innerHTML = `🚨 DISTRICT ALERT: ${type}. Auto-assigning nearest ${skill} responders.`;
+        alertBox.classList.remove('hidden');
+        
+        const autoInc = {
+            id: 'CPT-INTEL-' + Math.floor(Math.random()*99),
+            type: type, location: "District Wide", address: desc, skillReq: skill,
+            max: 5, crit: 'HIGH', status: 'IN_PROGRESS', responderIds: [],
+            startTime: new Date().toLocaleString()
+        };
+
+        const matches = this.vols.filter(v => v.isVerified && v.isOnDuty && !v.isBusy && v.skill === skill);
+        matches.slice(0, 5).forEach(m => { m.isBusy = true; autoInc.responderIds.push(m.id); });
+        
+        this.incs.push(autoInc); this.save(); this.renderDashboard();
+        setTimeout(() => alertBox.classList.add('hidden'), 8000);
+    },
+
+    // --- CORE LOGIC ---
     registerVolunteer() {
-        const skills = Array.from(document.querySelectorAll('input[name="vskill"]:checked')).map(i => i.value);
-        this.volunteers.push({
+        const v = {
+            id: 'V-' + Math.random().toString(36).substr(2,5).toUpperCase(),
             name: document.getElementById('volName').value,
             govID: document.getElementById('volGovID').value,
-            tier: document.getElementById('volMainSkill').value,
-            avail: document.getElementById('volAvail').value,
-            skills, 
+            blood: document.getElementById('volBlood').value,
+            skill: document.getElementById('volSkill').value,
             location: document.getElementById('volLocation').value,
-            isVerified: false 
-        });
-        this.save();
-        alert("Credentials Logged. Verification Pending with District HQ.");
-        this.showSection('home');
+            isVerified: false, isOnDuty: false, isBusy: false 
+        };
+        if(!v.name) return alert("Full Name Required");
+        this.vols.push(v); this.save(); alert("Registration Successful. Awaiting Admin Audit."); this.showSection('home');
+    },
+
+    toggleDuty() {
+        if (this.vols.length === 0) return alert("Please Register First.");
+        const user = this.vols[this.vols.length - 1]; 
+        user.isOnDuty = !user.isOnDuty;
+        this.save(); this.updateStats(); this.renderHeatmap();
+    },
+
+    renderHeatmap() {
+        const area = document.getElementById('heatmapArea');
+        const active = this.vols.filter(v => v.isVerified && v.isOnDuty && !v.isBusy);
+        if (active.length === 0) { area.innerHTML = "<small>No personnel currently active in Chengalpattu.</small>"; return; }
+        const heat = {}; active.forEach(v => { heat[v.location] = (heat[v.location] || 0) + 1; });
+        area.innerHTML = Object.keys(heat).map(loc => `<div class="heat-tag"><strong>${loc}</strong>: ${heat[loc]} Units</div>`).join('');
     },
 
     createIncident() {
-        const reqs = Array.from(document.querySelectorAll('input[name="tskill"]:checked')).map(i => i.value);
-        const taskLoc = document.getElementById('taskLocation').value;
-        const maxNeeded = parseInt(document.getElementById('taskMaxVolunteers').value) || 1;
-
         const newInc = {
-            id: 'OPS-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+            id: 'CPT-' + Math.random().toString(36).substr(2,4).toUpperCase(),
             type: document.getElementById('taskType').value,
-            criticality: document.getElementById('taskCriticality').value,
+            location: document.getElementById('taskLocation').value,
             address: document.getElementById('taskAddress').value,
-            victims: document.getElementById('taskVictims').value,
-            hazmat: document.getElementById('taskHazmat').value,
-            maxNeeded, location: taskLoc, requiredSkills: reqs,
-            status: (this.role === 'Admin') ? 'PENDING' : 'UNAUTHORIZED',
-            responders: []
+            skillReq: document.getElementById('taskSkillReq').value,
+            max: parseInt(document.getElementById('taskMax').value),
+            crit: document.getElementById('taskCrit').value,
+            status: (this.role === 'Admin' ? 'IN_PROGRESS' : 'UNAUTHORIZED'),
+            responderIds: [], startTime: new Date().toLocaleString()
         };
-
-        if (this.role === 'Admin') {
-            const matches = this.volunteers.filter(v => v.isVerified && v.location === taskLoc && v.skills.some(s => reqs.includes(s))).slice(0, maxNeeded);
-            if (matches.length > 0) { 
-                newInc.status = 'IN_PROGRESS'; 
-                newInc.responders = matches.map(m => m.name); 
-            }
-        }
-
-        this.incidents.push(newInc);
-        this.save();
-        this.showSection('dashboard');
+        if(this.role === 'Admin') this.autoMatch(newInc);
+        this.incs.push(newInc); this.save(); this.showSection('dashboard');
     },
 
-    authorizeReport(index) {
-        const inc = this.incidents[index];
-        const matches = this.volunteers.filter(v => v.isVerified && v.location === inc.location && v.skills.some(s => inc.requiredSkills.includes(s))).slice(0, inc.maxNeeded);
-        inc.status = matches.length > 0 ? 'IN_PROGRESS' : 'PENDING';
-        inc.responders = matches.map(m => m.name);
-        this.save();
-        this.renderReviewQueue();
-        this.refreshStats();
+    autoMatch(inc) {
+        let matches = this.vols.filter(v => v.isVerified && v.isOnDuty && !v.isBusy && v.location === inc.location && (v.skill === inc.skillReq || v.skill === "GEN"));
+        matches.slice(0, inc.max).forEach(m => { m.isBusy = true; inc.responderIds.push(m.id); });
     },
 
-    renderReviewQueue() {
-        const queue = document.getElementById('reviewQueueList');
-        const container = document.getElementById('adminReviewSection');
-        if (this.role !== 'Admin') { container.classList.add('hidden'); return; }
-        
-        const pending = this.incidents.filter(i => i.status === 'UNAUTHORIZED');
-        container.classList.toggle('hidden', pending.length === 0);
-        queue.innerHTML = '';
-        
-        this.incidents.forEach((inc, idx) => {
-            if (inc.status === 'UNAUTHORIZED') {
-                const card = document.createElement('div');
-                card.className = 'emergency-card unauthorized';
-                card.innerHTML = `<strong>${inc.type} @ ${inc.address}</strong><br>Risk: ${inc.hazmat} | Victims: ${inc.victims}<br><button class="btn-approve" onclick="Engine.authorizeReport(${idx})">VALIDATE & ACTIVATE OPS</button>`;
-                queue.appendChild(card);
-            }
-        });
+    resolve(idx) {
+        const inc = this.incs[idx];
+        inc.status = 'RESOLVED'; inc.endTime = new Date().toLocaleString();
+        inc.responderIds.forEach(id => { const v = this.vols.find(vol => vol.id === id); if(v) v.isBusy = false; });
+        this.save(); this.renderDashboard();
     },
 
     renderDashboard() {
-        const containers = { 
-            PENDING: document.getElementById('list-pending'), 
-            IN_PROGRESS: document.getElementById('list-progress'), 
-            RESOLVED: document.getElementById('list-resolved') 
-        };
-        Object.values(containers).forEach(c => c.innerHTML = '');
-        
-        this.incidents.filter(i => i.status !== 'UNAUTHORIZED').forEach(inc => {
-            const card = document.createElement('div');
-            card.className = `emergency-card critical-${inc.criticality.toLowerCase()}`;
-            card.innerHTML = `<strong>${inc.id}: ${inc.type}</strong><br>Loc: ${inc.address}<br>Deployment: ${inc.responders.length}/${inc.maxNeeded}<br><small>Personnel: ${inc.responders.join(', ') || 'SEARCHING FOR LOCAL ASSETS...'}</small>`;
-            containers[inc.status].appendChild(card);
+        const p = document.getElementById('list-progress'); const r = document.getElementById('list-resolved');
+        const filter = document.getElementById('aarSearch').value.toLowerCase();
+        p.innerHTML = ''; r.innerHTML = '';
+        this.incs.forEach((inc, idx) => {
+            const staff = inc.responderIds.map(id => this.vols.find(v => v.id === id)?.name).join(', ');
+            if(inc.status === 'IN_PROGRESS') {
+                p.innerHTML += `<div class="emergency-card critical-${inc.crit?.toLowerCase()}"><strong>${inc.id}: ${inc.type}</strong><br>${inc.address}<br><small>Personnel: ${staff || 'Pending Match'}</small><br>${this.role === 'Admin' ? `<button onclick="Engine.resolve(${idx})">MARK RESOLVED</button>` : ''}</div>`;
+            } else if(inc.status === 'RESOLVED' && inc.location.toLowerCase().includes(filter)) {
+                r.innerHTML += `<div class="aar-card"><strong>AAR ARCHIVE: ${inc.id}</strong><br>${inc.type} - ${inc.location}<br><small>${inc.startTime} - ${inc.endTime}</small></div>`;
+            }
         });
     },
 
-    renderVerificationList() {
-        const list = document.getElementById('pendingVolunteerList');
+    renderVols() {
+        const l = document.getElementById('vList');
         document.getElementById('verificationAdminCard').classList.toggle('hidden', this.role !== 'Admin');
-        list.innerHTML = '';
-        this.volunteers.forEach((v, i) => {
-            const item = document.createElement('div');
-            item.className = 'emergency-card';
-            item.innerHTML = `<strong>${v.name}</strong> [ID: ${v.govID}]<br>Role: ${v.tier} | Status: ${v.avail}<br>${!v.isVerified && this.role === 'Admin' ? `<button class="btn-approve" onclick="Engine.authorizeResponder(${i})">APPROVE CREDENTIALS</button>` : '<span style="color:var(--accent)">✔ Verified Officer</span>'}`;
-            list.appendChild(item);
-        });
+        l.innerHTML = this.vols.map((v, i) => `<div class="emergency-card"><strong>${v.name}</strong> [${v.skill}]<br>${v.location}<br>${!v.isVerified && this.role === 'Admin' ? `<button onclick="Engine.verifyV(${i})">APPROVE</button>` : v.isVerified ? '✓ VERIFIED' : 'Pending Verification'}</div>`).join('');
     },
 
-    authorizeResponder(i) { this.volunteers[i].isVerified = true; this.save(); this.renderVerificationList(); },
-    
-    refreshStats() { 
-        document.getElementById('statVols').innerText = this.volunteers.filter(v => v.isVerified).length;
-        document.getElementById('statIncidents').innerText = this.incidents.filter(i => i.status !== 'RESOLVED' && i.status !== 'UNAUTHORIZED').length;
+    verifyV(idx) { this.vols[idx].isVerified = true; this.save(); this.renderVols(); this.updateStats(); },
+
+    renderReviews() {
+        // Placeholder for review rendering logic if needed specifically for 'task' section
+        const reviewSection = document.getElementById('adminReviewSection');
+        if (reviewSection) reviewSection.classList.toggle('hidden', this.role !== 'Admin');
     },
     
-    save() { 
-        localStorage.setItem('vols_v2', JSON.stringify(this.volunteers)); 
-        localStorage.setItem('incs_v2', JSON.stringify(this.incidents)); 
+    updateStats() {
+        document.getElementById('statVols').innerText = this.vols.filter(v => v.isVerified).length;
+        document.getElementById('statIncidents').innerText = this.incs.filter(i => i.status === 'IN_PROGRESS').length;
+        const statusText = document.getElementById('currentStatusText');
+        if (statusText && this.vols.length > 0) {
+            const user = this.vols[this.vols.length - 1];
+            statusText.innerText = user.isBusy ? "DEPLOYED" : (user.isOnDuty ? "ACTIVE ON-DUTY" : "STANDBY OFF-DUTY");
+            statusText.className = user.isBusy ? "status-busy" : (user.isOnDuty ? "status-on" : "status-off");
+        }
+    },
+
+    save() {
+        localStorage.setItem('cpt_vols', JSON.stringify(this.vols));
+        localStorage.setItem('cpt_incs', JSON.stringify(this.incs));
     }
 };
 
-// Initial Load
-document.addEventListener('DOMContentLoaded', () => {
-    Engine.refreshStats();
-});
+// Initialize the application
+Engine.showSection('home');

@@ -1,3 +1,4 @@
+
 const DB = {
     dbName: "ECTZN_TACTICAL_DB",
     init() {

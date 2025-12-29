@@ -1,41 +1,165 @@
 :root {
-    --primary: #0f172a; --secondary: #1e293b; --accent: #10b981;
-    --danger: #ef4444; --warning: #f59e0b; --bg-overlay: rgba(247, 249, 255, 0.95); 
-    --text: #000000; --card-bg: rgba(255, 255, 255, 1); --border: #cbd5e1;
+    /* Muted & Command-Center Palette */
+    --primary: #618ed5;    /* Deep Slate */
+    --secondary: #82b0ef;  /* Medium Slate */
+    --accent: #94a3b8;     /* Muted Silver Blue */
+    --danger: #bf4c4c;     /* Muted Crimson */
+    --warning: #be7e36;    /* Muted Amber */
+    --success: #35a082;    /* Deep Emerald */
+    --info: #4682a2;       /* Deep Sky */
+    --text: #0f172a;       /* Dark Navy */
+    --card-bg: rgba(255, 255, 255, 0.94);
+    --border: rgba(0, 0, 0, 0.1);
+    --sidebar-width: 260px;
 }
 
-body { 
-    margin: 0; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: var(--text); display: flex; 
-    background-color: #f8fafc;
+/* Global Reset to prevent width calculation errors */
+* {
+    box-sizing: border-box;
 }
 
-.sidebar { height: 100vh; width: 280px; position: fixed; background: var(--primary); color: white; display: flex; flex-direction: column; z-index: 1000; }
-.sidebar-header { padding: 30px; font-size: 1.5rem; font-weight: 800; color: var(--accent); border-bottom: 1px solid #334155; }
-.sidebar a { padding: 15px 30px; color: #94a3b8; text-decoration: none; border-left: 4px solid transparent; font-weight: 500; cursor: pointer; font-size: 0.9rem; transition: 0.3s; }
-.sidebar a:hover, .sidebar a.active { background: var(--secondary); color: white; border-left-color: var(--accent); }
-.sidebar-footer { margin-top: auto; padding: 20px; border-top: 1px solid #334155; }
+/* Update these core sections in your style.css */
 
-.main { margin-left: 280px; width: calc(100% - 280px); min-height: 100vh; }
-.content-container { padding: 40px; }
+body {
+    margin: 0;
+    padding: 0;
+    display: flex; /* Creates a horizontal relationship between Sidebar and Main */
+    min-height: 100vh;
+    font-family: 'Courier New', Courier, monospace;
+    /* ... your background images ... */
+}
 
-.card { background: var(--card-bg); padding: 30px; border-radius: 12px; margin-bottom: 30px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+.sidebar {
+    width: 280px;
+    flex-shrink: 0; /* Prevents the sidebar from getting squished */
+    height: 100vh;
+    position: sticky; /* Stays in view while scrolling */
+    top: 0;
+    left: 0;
+    background: var(--primary);
+    color: white;
+    z-index: 1000;
+    overflow-y: auto; /* Allows the sidebar itself to scroll if it has many links */
+}
 
-.section-title { font-size: 0.75rem; color: var(--accent); font-weight: bold; text-transform: uppercase; margin-top: 20px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; grid-column: span 2; }
-.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
-.full-width { grid-column: span 2; }
+.main {
+    flex-grow: 1; /* Takes up all remaining space */
+    min-width: 0;  /* Crucial for preventing content from breaking the flex container */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centers cards horizontally */
+    padding: 30px;
+}
 
-label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.75rem; color: #475569; }
-input, select, textarea { padding: 10px; width: 100%; border-radius: 6px; border: 1px solid var(--border); background: #ffffff; box-sizing: border-box; font-size: 0.85rem; }
+/* Update your content-container to allow more room for the stats row */
+.content-container {
+    width: 100%;
+    max-width: 900px; /* Increased to allow stats side-by-side */
+    display: flex;
+    flex-direction: column;
+    gap: 20px; /* Creates consistent vertical space between cards */
+    padding: 10px;
+}
 
-button { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-weight: 700; text-transform: uppercase; margin-top: 10px; transition: 0.2s; }
-button:hover { opacity: 0.9; }
-.btn-dispatch { background: var(--danger); width: 100%; margin-top: 25px; font-size: 1rem; }
-.btn-approve { background: #6366f1; padding: 6px 12px; font-size: 0.7rem; border-radius: 4px; }
+/* Ensure the API card stays compact but full width of container */
+.api-card {
+    width: 100%;
+    max-height: 180px; /* Slightly reduced to keep it slim */
+    overflow-y: hidden; /* Hide main overflow, scroll only the list */
+    padding: 15px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-top: 4px solid var(--info);
+}
 
-.emergency-card { border-left: 6px solid var(--border); padding: 15px; background: white; margin-bottom: 15px; border-radius: 4px; border: 1px solid var(--border); }
-.unauthorized { border: 2px dashed var(--warning); background: #fffbeb; }
-.critical-high { border-left-color: var(--danger); }
+/* Add this to handle the "Quick Stats" row correctly */
+.row.g-3 {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 -10px; /* Offset bootstrap padding */
+}
 
-#loginOverlay { position: fixed; inset: 0; background: var(--primary); display: flex; align-items: center; justify-content: center; z-index: 9999; }
-.login-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
-.hidden { display: none !important; }
+.row.g-3 > div {
+    flex: 1;
+    min-width: 280px; /* Prevents them from getting too skinny/overlapping */
+    padding: 0 10px;
+}
+
+/* Force the stat cards to be the same height */
+.card.p-4 {
+    height: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+}
+/* --- Aesthetic Earthquake Monitor Card --- */
+
+.api-card .section-title {
+    text-align: left;
+    letter-spacing: 2px;
+    font-size: 0.8rem;
+    color: var(--primary);
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+#earthquake-list {
+    overflow-y: auto;
+    padding-right: 2px;
+    flex-grow: 1;
+}
+
+#earthquake-list::-webkit-scrollbar {
+    width: 4px;
+}
+#earthquake-list::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 10px;
+}
+
+/* Individual Quake Item Styling */
+.quake-item {
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    background: rgba(255, 252, 252, 0.5);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--info); /* Signal indicator */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s ease;
+}
+
+.quake-item:hover {
+    background: #f8fafc;
+    border-left-width: 8px;
+}
+
+/* Magnitude Badge: Square & Formal */
+.quake-mag {
+    background: var(--primary); /* Muted slate instead of bright blue */
+    color: white;
+    padding: 4px 4px;
+    font-weight: 900;
+    font-size: 0.9rem;
+    min-width: 60px;
+    text-align: center;
+}
+
+.quake-date {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--secondary);
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+
+/* API Footer Info */
+.api-status {
+    font-size: 0.65rem;
+    color: var(--accent);
+    margin-top: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
